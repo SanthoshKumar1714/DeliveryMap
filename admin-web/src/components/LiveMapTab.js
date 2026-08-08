@@ -25,9 +25,9 @@ const freshIcon = pinIcon('#0f7a6c');   // green
 const staleIcon = pinIcon('#c67c1e');   // yellow/amber
 const offlineIcon = pinIcon('#c0392b'); // red
 
-function minutesAgo(dateStr) {
+function minutesAgo(dateStr, currentTime) {
   if (!dateStr) return null;
-  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffMs = currentTime - new Date(dateStr).getTime();
   return Math.round(diffMs / 60000);
 }
 
@@ -80,10 +80,10 @@ export default function LiveMapTab() {
 
   const withLocation = partners.filter((p) => p.lastLocation?.lat);
 
-  const withFreshness = withLocation.map((p) => {
-    const mins = minutesAgo(p.lastLocation.updatedAt);
-    return { ...p, _mins: mins, _level: getFreshnessLevel(mins) };
-  });
+ const withFreshness = withLocation.map((p) => {
+  const mins = minutesAgo(p.lastLocation.updatedAt, nowTick);
+  return { ...p, _mins: mins, _level: getFreshnessLevel(mins) };
+});
 
   const freshCount = withFreshness.filter((p) => p._level === 'fresh').length;
   const staleCount = withFreshness.filter((p) => p._level === 'stale').length;
