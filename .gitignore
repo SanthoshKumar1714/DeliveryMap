@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files
+.env
+**/.env
+!.env.sample
+!.env.example
+
+# Build outputs
+backend/dist/
+admin-web/dist/
+admin-web/build/
+mobile/.expo/
+mobile/dist/
+*.apk
+*.aab
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

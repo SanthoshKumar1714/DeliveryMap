@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --ink: #12181a;
+  --ink-soft: #57646a;
+  --paper: #f7f5f0;
+  --panel: #ffffff;
+  --line: #e6e2d8;
+  --teal: #0f7a6c;
+  --teal-soft: #e2f2ee;
+  --teal-deep: #0a5c51;
+  --amber: #c67c1e;
+  --amber-soft: #fbf0dd;
+  --brick: #b23b2e;
+  --brick-soft: #fbe8e5;
+  --sidebar: #12181a;
+  --sidebar-line: #232c2f;
+  --font-display: 'Poppins', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
