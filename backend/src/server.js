@@ -14,7 +14,23 @@ const compression = require('compression');
 const app = express();
 
 // ============ MIDDLEWARE ============
-app.use(cors());  // Allow cross-origin requests
+const allowedOrigins = [
+  'https://delivery-map-beta.vercel.app',
+  'http://localhost:3000', // keep for local admin dev
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow requests with no origin — mobile apps (Expo/axios), curl, Postman
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
+  // Allow cross-origin requests
 app.use(compression());
 app.use(express.json());  // Parse JSON request bodies
 
