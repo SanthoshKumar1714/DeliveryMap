@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { parseMapsLink } from "../utils/parseMapsLink";
 import {
   View,
   Text,
@@ -8,7 +9,10 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from "react-native";
+import { Share } from "react-native";
+import { loadMapAssets } from "../utils/loadMapAssets";
 import theme from "../theme";
 import { useToast } from "../components/ui/ToastProvider";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -16,6 +20,7 @@ import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import * as Linking from "expo-linking";
 import useNetworkStatus from "../utils/useNetworkStatus";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   locationAPI,
   settingsAPI,
@@ -30,6 +35,7 @@ const SHOP_LAT = 12.96;
 const SHOP_LNG = 80.22;
 
 export default function DeliveryMap({ partner, onLogout }) {
+  const insets = useSafeAreaInsets();
   const [locations, setLocations] = useState([]);
   const [approvalMode, setApprovalMode] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -38,15 +44,16 @@ export default function DeliveryMap({ partner, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userLocation, setUserLocation] = useState(null);
-  const [focusTarget, setFocusTarget] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [webviewLoading, setWebviewLoading] = useState(true);
   const searchDebounce = useRef(null);
   const locationReportInterval = useRef(null);
   const webviewRef = useRef(null);
-  const lastLocationsRef = useRef(null);
   const isConnected = useNetworkStatus();
   const { showToast } = useToast();
+  const [linkPromptVisible, setLinkPromptVisible] = useState(false);
+  const [linkInput, setLinkInput] = useState("");
+  const [parsingLink, setParsingLink] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -57,13 +64,6 @@ export default function DeliveryMap({ partner, onLogout }) {
   });
 
   useEffect(() => {
-    if (lastLocationsRef.current === null) {
-      // Skip first run — initial locations are already in the HTML on load
-      lastLocationsRef.current = locations;
-      return;
-    }
-    lastLocationsRef.current = locations;
-
     webviewRef.current?.injectJavaScript(`
     if (window.updateMarkers) { window.updateMarkers(${JSON.stringify(locations)}); }
     true;
@@ -78,11 +78,12 @@ export default function DeliveryMap({ partner, onLogout }) {
   useEffect(() => {
     if (!partner) return;
 
-    const reportLocation = async () => {
-      if (!isConnected) return; // don't bother — will fail anyway, just wastes GPS+battery
+    const reportLocation = async (attempt = 0) => {
+      if (!isConnected) return;
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") return;
+
         const { coords } = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
@@ -90,9 +91,37 @@ export default function DeliveryMap({ partner, onLogout }) {
         await partnerAPI.updateLocation(coords.latitude, coords.longitude);
       } catch (err) {
         console.error("Location report failed:", err.message);
+
+        // On the very first attempt only, try a cached fix so the dot can
+        // appear immediately if one exists (may be null on a fresh permission
+        // grant — that's expected and handled below via retry).
+        if (attempt === 0) {
+          try {
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown) {
+              setUserLocation({
+                lat: lastKnown.coords.latitude,
+                lng: lastKnown.coords.longitude,
+              });
+            }
+          } catch (fallbackErr) {
+            console.error(
+              "Last known location fallback failed:",
+              fallbackErr.message,
+            );
+          }
+        }
+
+        // Retry with backoff up to 4 times (covers cold GPS radio / fresh
+        // permission grant with no cached fix). Caps at ~15s total instead
+        // of silently waiting for the next full 30s interval.
+        const maxAttempts = 4;
+        if (attempt < maxAttempts) {
+          const delay = 2000 * (attempt + 1); // 2s, 4s, 6s, 8s
+          setTimeout(() => reportLocation(attempt + 1), delay);
+        }
       }
     };
-
     reportLocation(); // send immediately on login/app open, also sets initial map position
     locationReportInterval.current = setInterval(reportLocation, 30000);
 
@@ -104,7 +133,6 @@ export default function DeliveryMap({ partner, onLogout }) {
   useEffect(() => {
     init();
   }, []);
- 
 
   const init = async () => {
     await checkApprovalMode();
@@ -121,7 +149,7 @@ export default function DeliveryMap({ partner, onLogout }) {
     }
   };
 
-   const loadLocations = async () => {
+  const loadLocations = async () => {
     try {
       const res = await locationAPI.getAll(SHOP_LAT, SHOP_LNG, 30);
       setLocations(res.data);
@@ -133,6 +161,10 @@ export default function DeliveryMap({ partner, onLogout }) {
         showToast("Could not load locations. Check backend connection.");
       }
     }
+  };
+  const handleRefreshMarkers = async () => {
+    showToast("Refreshing locations…");
+    await loadLocations();
   };
   const handleAddLocation = async () => {
     if (!formData.name) {
@@ -175,6 +207,28 @@ export default function DeliveryMap({ partner, onLogout }) {
       showToast(err.response?.data?.error || "Failed to add location");
     }
   };
+  const handleParseLink = async () => {
+  setParsingLink(true);
+  try {
+    const { lat, lng } = await parseMapsLink(linkInput);
+    setFormData({
+      name: "",
+      customerPhones: "",
+      type: "home",
+      unitNumber: "",
+      notes: "",
+      lat,
+      lng,
+    });
+    setLinkPromptVisible(false);
+    setLinkInput("");
+    setModalVisible(true);
+  } catch (err) {
+    Alert.alert("Couldn't parse link", err.message);
+  } finally {
+    setParsingLink(false);
+  }
+};
 
   const handleSubmitEditRequest = async (reason, proposedChanges) => {
     try {
@@ -220,6 +274,16 @@ export default function DeliveryMap({ partner, onLogout }) {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     Linking.openURL(url);
   };
+  const shareLocation = async (lat, lng, name) => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    try {
+      await Share.share({
+        message: `${name}: ${url}`,
+      });
+    } catch (err) {
+      console.error("Share failed:", err.message);
+    }
+  };
 
   const handleSearchChange = (text) => {
     setSearchText(text);
@@ -240,11 +304,17 @@ export default function DeliveryMap({ partner, onLogout }) {
       setSearchResults(matches);
 
       if (matches.length === 1) {
-        setFocusTarget({ lat: matches[0].lat, lng: matches[0].lng });
+        webviewRef.current?.injectJavaScript(`
+          (function() {
+            if (window.map) {
+              window.map.setView([${matches[0].lat}, ${matches[0].lng}], 17);
+            }
+            true;
+          })();
+        `);
       }
     }, 250);
   };
-
   const clearSearch = () => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     setSearchText("");
@@ -252,6 +322,7 @@ export default function DeliveryMap({ partner, onLogout }) {
   };
 
   const selectSearchResult = (loc) => {
+    Keyboard.dismiss();
     setSearchText(loc.name);
     setSearchResults([]);
     webviewRef.current?.injectJavaScript(`
@@ -263,6 +334,22 @@ export default function DeliveryMap({ partner, onLogout }) {
     })();
   `);
   };
+  // Built exactly once per screen mount, using only the initial values.
+  // Never re-run this after mount — that's what was causing the WebView
+  // to reload and reset zoom/pan on every state change.
+  const initialMapHtml = useMemo(
+    () =>
+      buildMapHtml(
+        locations,
+        SHOP_LAT,
+        SHOP_LNG,
+        userLocation,
+        partner?.role === "admin" || partner?.role === "head_delivery",
+        loadMapAssets(),
+      ),
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -273,7 +360,9 @@ export default function DeliveryMap({ partner, onLogout }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View
+        style={[styles.header, { paddingTop: insets.top + theme.spacing.md }]}
+      >
         <View>
           <Text style={styles.headerTitle}>DropMap</Text>
           {partner && (
@@ -282,15 +371,32 @@ export default function DeliveryMap({ partner, onLogout }) {
             </Text>
           )}
         </View>
-        {onLogout && (
+        <View style={styles.headerActions}>
           <TouchableOpacity
-            onPress={onLogout}
-            style={styles.logoutBtn}
-            accessibilityLabel="Logout"
+            onPress={handleRefreshMarkers}
+            style={styles.iconBtn}
+            accessibilityLabel="Refresh markers"
           >
-            <MaterialIcons name="logout" size={20} color={theme.colors.muted} />
+            <MaterialIcons
+              name="refresh"
+              size={20}
+              color={theme.colors.muted}
+            />
           </TouchableOpacity>
-        )}
+          {onLogout && (
+            <TouchableOpacity
+              onPress={onLogout}
+              style={styles.iconBtn}
+              accessibilityLabel="Logout"
+            >
+              <MaterialIcons
+                name="logout"
+                size={20}
+                color={theme.colors.muted}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {approvalMode && (
@@ -323,6 +429,7 @@ export default function DeliveryMap({ partner, onLogout }) {
           style={styles.resultsList}
           data={searchResults}
           keyExtractor={(item) => item._id}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.resultItem}
@@ -338,23 +445,25 @@ export default function DeliveryMap({ partner, onLogout }) {
       )}
 
       <View style={{ flex: 1 }}>
+        
         <WebView
           ref={webviewRef}
           style={{ flex: 1 }}
           originWhitelist={["*"]}
-          source={{
-            html: buildMapHtml(
-              locations,
-              focusTarget?.lat || SHOP_LAT,
-              focusTarget?.lng || SHOP_LNG,
-              userLocation,
-              partner?.role === "admin" || partner?.role === "head_delivery",
-            ),
+          source={{ html: initialMapHtml }}
+          onShouldStartLoadWithRequest={(request) => {
+            if (request.url.startsWith("tel:")) {
+              Linking.openURL(request.url);
+              return false; // block the WebView from trying to navigate itself
+            }
+            return true; // allow normal navigation (initial HTML load, etc.)
           }}
           onMessage={(event) => {
             const data = JSON.parse(event.nativeEvent.data);
             if (data.type === "navigate") {
               openGoogleMaps(data.lat, data.lng);
+            } else if (data.type === "share") {
+              shareLocation(data.lat, data.lng, data.name);
             } else if (data.type === "longpress") {
               setFormData({
                 name: "",
@@ -371,6 +480,7 @@ export default function DeliveryMap({ partner, onLogout }) {
                 locationId: data.locationId,
                 name: data.name,
                 notes: data.notes,
+                customerPhones: data.customerPhones,
               });
               setEditModalVisible(true);
             } else if (data.type === "deleteDirect") {
@@ -401,7 +511,17 @@ export default function DeliveryMap({ partner, onLogout }) {
             }
           }}
           onLoadStart={() => setWebviewLoading(true)}
-          onLoadEnd={() => setWebviewLoading(false)}
+          onLoadEnd={() => {
+            setWebviewLoading(false);
+            // Safety net: if locations arrived before the WebView's JS finished
+            // executing, the first injectJavaScript call would have silently no-op'd.
+            // Re-send once we know the page has actually finished loading.
+            webviewRef.current?.injectJavaScript(`
+              if (window.updateMarkers) { window.updateMarkers(${JSON.stringify(locations)}); }
+              if (window.updateUserMarker) { window.updateUserMarker(${userLocation ? JSON.stringify(userLocation) : "null"}); }
+              true;
+            `);
+          }}
         />
 
         {webviewLoading && (
@@ -409,6 +529,19 @@ export default function DeliveryMap({ partner, onLogout }) {
             <ActivityIndicator size="large" color={theme.colors.primary} />
           </View>
         )}
+
+        {webviewLoading && (
+  <View style={styles.webviewOverlay} pointerEvents="none">
+    <ActivityIndicator size="large" color={theme.colors.primary} />
+  </View>
+)}
+<TouchableOpacity
+  style={[styles.linkFab, { bottom: theme.spacing.lg }]}
+  onPress={() => setLinkPromptVisible(true)}
+  accessibilityLabel="Add location from Google Maps link"
+>
+  <MaterialIcons name="link" size={22} color="#1D1D1F" />
+</TouchableOpacity>
       </View>
 
       <View style={styles.hintBar}>
@@ -434,6 +567,43 @@ export default function DeliveryMap({ partner, onLogout }) {
         }}
         onSubmit={handleSubmitEditRequest}
       />
+      {linkPromptVisible && (
+  <View style={styles.linkPromptOverlay}>
+    <View style={styles.linkPromptBox}>
+      <Text style={styles.linkPromptTitle}>Add from Google Maps link</Text>
+      <TextInput
+        placeholder="Paste Google Maps link here"
+        value={linkInput}
+        onChangeText={setLinkInput}
+        style={styles.linkPromptInput}
+        autoFocus
+        multiline
+      />
+      <View style={styles.linkPromptActions}>
+        <TouchableOpacity
+          style={styles.linkPromptCancel}
+          onPress={() => {
+            setLinkPromptVisible(false);
+            setLinkInput("");
+          }}
+        >
+          <Text style={styles.linkPromptCancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkPromptSubmit}
+          onPress={handleParseLink}
+          disabled={parsingLink}
+        >
+          {parsingLink ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.linkPromptSubmitText}>Parse & Add</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+)}
     </View>
   );
 }
@@ -460,8 +630,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     textTransform: "capitalize",
   },
-  logoutBtn: { padding: 8, borderRadius: theme.radii.sm },
-  logoutIcon: { fontSize: 18, color: theme.colors.muted },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  iconBtn: {
+    padding: 8,
+    borderRadius: theme.radii.sm,
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   approvalBadge: {
     fontSize: 12,
     color: theme.colors.danger,
@@ -538,5 +715,80 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: theme.fontSizes.small,
     fontWeight: "600",
-  },
+  },linkFab: {
+  position: "absolute",
+  left: theme.spacing.lg,
+  width: 48,
+  height: 48,
+  borderRadius: 24,
+  backgroundColor: "#FFFFFF",
+  alignItems: "center",
+  justifyContent: "center",
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.25,
+  shadowRadius: 5,
+  elevation: 4,
+},
+linkPromptOverlay: {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(0,0,0,0.4)",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: theme.spacing.lg,
+},
+linkPromptBox: {
+  backgroundColor: "#fff",
+  borderRadius: theme.radii.md,
+  padding: theme.spacing.lg,
+  width: "100%",
+  maxWidth: 400,
+},
+linkPromptTitle: {
+  fontSize: theme.fontSizes.body,
+  fontWeight: "700",
+  color: theme.colors.text,
+  marginBottom: theme.spacing.md,
+},
+linkPromptInput: {
+  borderWidth: 1,
+  borderColor: theme.colors.border,
+  borderRadius: theme.radii.sm,
+  padding: 12,
+  fontSize: theme.fontSizes.small,
+  minHeight: 60,
+  textAlignVertical: "top",
+  marginBottom: theme.spacing.md,
+},
+linkPromptActions: {
+  flexDirection: "row",
+  gap: 8,
+},
+linkPromptCancel: {
+  flex: 1,
+  padding: 12,
+  borderRadius: theme.radii.sm,
+  borderWidth: 1,
+  borderColor: theme.colors.border,
+  alignItems: "center",
+},
+linkPromptCancelText: {
+  color: theme.colors.text,
+  fontWeight: "600",
+},
+linkPromptSubmit: {
+  flex: 1,
+  padding: 12,
+  borderRadius: theme.radii.sm,
+  backgroundColor: "#000",
+  alignItems: "center",
+},
+linkPromptSubmitText: {
+  color: "#fff",
+  fontWeight: "600",
+},
 });

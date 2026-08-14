@@ -5,7 +5,7 @@ const { z } = require('zod');
 // — those are system-controlled and must never come from the client.
 const createLocationSchema = z.object({
   customerId: z.string().min(1, 'customerId is required'),
-  type: z.enum(['home', 'building']),
+  type: z.enum(['home', 'building','flat','hotel']),
   name: z.string().min(1, 'name is required').max(200),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

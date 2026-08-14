@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import DeliveryMap from './screens/DeliveryMap';
@@ -38,30 +39,34 @@ export default function App() {
 
   if (checking) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#000" />
-      </View>
+      <SafeAreaProvider>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#000" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
-  return (
-    <NavigationContainer>
-      <ToastProvider>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {partner ? (
-          <Stack.Screen name="DeliveryMap">
-            {(props) => <DeliveryMap {...props} partner={partner} onLogout={handleLogout} />}
-          </Stack.Screen>
-        ) : (
-          <>
-            <Stack.Screen name="Login">
-              {(props) => <LoginScreen {...props} onLoginSuccess={handleLoginSuccess} />}
+ return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <ToastProvider>
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {partner ? (
+            <Stack.Screen name="DeliveryMap">
+              {(props) => <DeliveryMap {...props} partner={partner} onLogout={handleLogout} />}
             </Stack.Screen>
-            <Stack.Screen name="Register" component={RegisterScreen} />
-          </>
-        )}
-        </Stack.Navigator>
-      </ToastProvider>
-    </NavigationContainer>
+          ) : (
+            <>
+              <Stack.Screen name="Login">
+                {(props) => <LoginScreen {...props} onLoginSuccess={handleLoginSuccess} />}
+              </Stack.Screen>
+              <Stack.Screen name="Register" component={RegisterScreen} />
+            </>
+          )}
+          </Stack.Navigator>
+        </ToastProvider>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }

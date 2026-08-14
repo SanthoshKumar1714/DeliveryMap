@@ -26,8 +26,18 @@ const EditRequestSchema = new mongoose.Schema(
     reviewedBy: String,
     reviewedAt: Date,
     rejectionReason: String,
+
+    // Set only when status moves to approved/rejected — see routes.
+    // MongoDB's TTL monitor deletes the document once this timestamp is reached.
+    // Pending requests never get this field set, so they're never auto-deleted.
+    expiresAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+
+// TTL index — MongoDB checks this in the background (~every 60s) and removes
+// any document once its expiresAt timestamp has passed. Documents with
+// expiresAt: null are simply never picked up, so pending requests are safe.
+EditRequestSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('EditRequest', EditRequestSchema);

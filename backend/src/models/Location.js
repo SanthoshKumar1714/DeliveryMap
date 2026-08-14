@@ -4,7 +4,7 @@ const LocationSchema = new mongoose.Schema(
   {
     // Basic Info
     customerId: { type: String, required: true },
-    type: { type: String, enum: ['home', 'building'], required: true },
+    type: { type: String, enum: ['home', 'flat', 'hotel', 'building'], required: true },
     name: { type: String, required: true },
 
     // Coordinates

@@ -1,4 +1,5 @@
 const express = require('express');
+const { sanitizeLocationUpdate } = require('../utils/sanitizeLocationUpdate');
 const Location = require('../models/Location');
 const Settings = require('../models/Settings');
 const { authMiddleware, adminMiddleware, optionalAuthMiddleware } = require('../middleware/auth');
@@ -148,10 +149,11 @@ router.put('/:id', authMiddleware, writeLimiter, validateUpdate, async (req, res
     }
 
     // Update fields
-    Object.assign(location, req.body);
-    location.lastEditedBy = req.user.id;
-    location.lastEditedAt = new Date();
-    location.version += 1;
+// Update fields
+Object.assign(location, sanitizeLocationUpdate(req.body));
+location.lastEditedBy = req.user.id;
+location.lastEditedAt = new Date();
+location.version += 1;
 
     await location.save();
 

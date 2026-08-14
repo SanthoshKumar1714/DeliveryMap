@@ -1,9 +1,15 @@
-  const express = require('express');
+const express = require('express');
+const { sanitizeLocationUpdate } = require('../utils/sanitizeLocationUpdate');
   const EditRequest = require('../models/EditRequest');
   const Location = require('../models/Location');
   const { authMiddleware, adminMiddleware, canEditFreelyMiddleware } = require('../middleware/auth');
   const { writeLimiter } = require('../middleware/rateLimiter');
   const router = express.Router();
+
+  // Reviewed (approved/rejected) requests are auto-deleted this many days after
+  // review, via the TTL index on EditRequest.expiresAt. Pending requests are
+  // never touched — expiresAt only gets set once a decision is made.
+  const REVIEWED_RETENTION_DAYS = 90;
 
   // ============ SUBMIT an edit/delete request (any delivery partner) ============
 // was: router.post('/', authMiddleware, async (req, res) => {
@@ -29,13 +35,13 @@ router.post('/', authMiddleware, writeLimiter, async (req, res) => {
           await Location.findByIdAndDelete(locationId);
           return res.json({ message: 'Location deleted directly (elevated permissions)' });
         } else {
-          Object.assign(location, proposedChanges);
-          location.lastEditedBy = req.user.id;
-          location.lastEditedAt = new Date();
-          location.version += 1;
-          await location.save();
-          return res.json({ location, message: 'Location updated directly (elevated permissions)' });
-        }
+  Object.assign(location, sanitizeLocationUpdate(proposedChanges));
+  location.lastEditedBy = req.user.id;
+  location.lastEditedAt = new Date();
+  location.version += 1;
+  await location.save();
+  return res.json({ location, message: 'Location updated directly (elevated permissions)' });
+}
       }
 
       // Regular delivery partner — create a pending request instead
@@ -95,18 +101,19 @@ router.post('/:id/approve', adminMiddleware, async (req, res) => {
     }
 
     if (editRequest.requestType === 'delete') {
-      await Location.findByIdAndDelete(editRequest.locationId);
-    } else {
-      Object.assign(location, editRequest.proposedChanges);
-      location.lastEditedBy = editRequest.requestedBy;
-      location.lastEditedAt = new Date();
-      location.version += 1;
-      await location.save();
-    }
+  await Location.findByIdAndDelete(editRequest.locationId);
+} else {
+  Object.assign(location, sanitizeLocationUpdate(editRequest.proposedChanges));
+  location.lastEditedBy = editRequest.requestedBy;
+  location.lastEditedAt = new Date();
+  location.version += 1;
+  await location.save();
+}
 
     editRequest.status = 'approved';
     editRequest.reviewedBy = req.user.id;
     editRequest.reviewedAt = new Date();
+    editRequest.expiresAt = new Date(Date.now() + REVIEWED_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     await editRequest.save();
 
     res.json({ message: `${editRequest.requestType} request approved and applied` });
@@ -126,6 +133,7 @@ router.post('/:id/approve', adminMiddleware, async (req, res) => {
       editRequest.reviewedBy = req.user.id;
       editRequest.reviewedAt = new Date();
       editRequest.rejectionReason = reason;
+      editRequest.expiresAt = new Date(Date.now() + REVIEWED_RETENTION_DAYS * 24 * 60 * 60 * 1000);
       await editRequest.save();
 
       res.json({ message: 'Request rejected' });

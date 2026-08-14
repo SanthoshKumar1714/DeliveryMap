@@ -8,6 +8,8 @@ export default function LocationsTab() {
   const [allLocations, setAllLocations] = useState([]);
   const [tab, setTab] = useState('pending');
   const [editing, setEditing] = useState(null);
+  
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     loadPending();
@@ -36,7 +38,21 @@ export default function LocationsTab() {
 
   const activeCount = allLocations.filter((l) => l.status === 'active').length;
   const rejectedCount = allLocations.filter((l) => l.status === 'rejected').length;
-  const shown = tab === 'pending' ? pending : allLocations;
+  const baseList = tab === 'pending' ? pending : allLocations;
+
+const shown = search.trim()
+  ? baseList.filter((loc) => {
+      const q = search.trim().toLowerCase();
+      return (
+        loc.name?.toLowerCase().includes(q) ||
+        loc.type?.toLowerCase().includes(q) ||
+        loc.unitNumber?.toLowerCase?.().includes(q) ||
+        loc.houseNumber?.toLowerCase?.().includes(q) ||
+        loc.notes?.toLowerCase().includes(q) ||
+        loc.customerPhones?.some((p) => p.includes(q))
+      );
+    })
+  : baseList;
 
   return (
     <div>
@@ -60,11 +76,32 @@ export default function LocationsTab() {
         </button>
       </div>
 
+      <div style={s.searchWrap}>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, type, unit, house no. or phone…"
+          style={s.searchInput}
+        />
+        {search && (
+          <button onClick={() => setSearch('')} style={s.searchClear} title="Clear search">✕</button>
+        )}
+      </div>
+
       {shown.length === 0 ? (
         <EmptyState
           icon="📍"
-          title={tab === 'pending' ? 'No locations awaiting approval' : 'No locations yet'}
-          subtitle={tab === 'pending' ? 'New drop points will show up here for review.' : undefined}
+          title={
+            search
+              ? 'No locations match your search'
+              : tab === 'pending' ? 'No locations awaiting approval' : 'No locations yet'
+          }
+          subtitle={
+            search
+              ? 'Try a different name, unit, or phone number.'
+              : tab === 'pending' ? 'New drop points will show up here for review.' : undefined
+          }
         />
       ) : (
         <div style={s.grid}>
@@ -148,5 +185,14 @@ const s = {
   rowLabel: { color: 'var(--ink-soft)', minWidth: 70, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.02em', paddingTop: 1 },
   mono: { fontFamily: 'var(--font-mono)', fontSize: 12.5 },
   notes: { fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--line)' },
-  actions: { display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' },
+  actions: { display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' },searchWrap: { position: 'relative', marginBottom: 18, maxWidth: 420 },
+  searchInput: {
+    width: '100%', padding: '9px 34px 9px 12px', fontSize: 13.5,
+    border: '1px solid var(--line)', borderRadius: 8, background: 'var(--panel)',
+    color: 'var(--ink)', fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
+  },
+  searchClear: {
+    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+    background: 'none', border: 'none', color: 'var(--ink-soft)', cursor: 'pointer', fontSize: 13,
+  },
 };
