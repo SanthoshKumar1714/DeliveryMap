@@ -63,7 +63,7 @@ export default function buildMapHtml(initialLocations, centerLat, centerLng, use
         if (map.touchRotate && map.touchRotate.disable) {
           map.touchRotate.disable();
         }
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_2mx8_1_436f037eb65455ff4e556be9', {
           maxZoom: 19,
         }).addTo(map);
 
