@@ -213,9 +213,9 @@ export default function LiveMapTab() {
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-          />
+  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_2mx8_1_436f037eb65455ff4e556be9"
+  attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+/>
           {clusters.map((group) => {
             const isCluster = group.length > 1;
             const anchor = group[0];
