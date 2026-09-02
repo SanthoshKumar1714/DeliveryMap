@@ -36,10 +36,17 @@ export default {
   ]
 ],
     extra: {
-      apiUrl: process.env.API_URL || "http://192.168.1.6:5000/api",
+      apiUrl: process.env.API_URL || "http://192.168.1.7:5000/api",
       eas: {
         projectId: "40588fd9-26ad-4184-8a96-877511daea80"
       }
-    }
+    },
+    updates: {
+    url: "https://u.expo.dev/40588fd9-26ad-4184-8a96-877511daea80"
+  },
+  runtimeVersion: {
+    policy: "appVersion"
+  }
+    
   }
 };
